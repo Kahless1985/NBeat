@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Beat Rater">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="app.css">
+  <title>Beat Rater</title>
+</head>
+<body>
+  <main id="app" class="app-shell" aria-live="polite">
+    <header class="top-area">
+      <div class="title-row">
+        <h1>Beat Rater</h1>
+        <span id="timingBadge" class="badge">No book</span>
+      </div>
+      <div class="transport-grid" aria-label="Playback controls">
+        <button id="backBtn" class="transport"><span class="transport-icon">«</span><span>Back</span></button>
+        <button id="playBtn" class="transport"><span id="playIcon" class="transport-icon">▶</span><span id="playLabel">Play</span></button>
+        <button id="forwardBtn" class="transport"><span class="transport-icon">»</span><span>Forward</span></button>
+        <button id="optionsBtn" class="transport"><span class="transport-icon">⚙</span><span>Options</span></button>
+      </div>
+    </header>
+
+    <section class="ratings" aria-label="Score current Beat">
+      <button class="rating r-plus2" data-score="2">+2</button>
+      <button class="rating r-plus1" data-score="1">+1</button>
+      <button class="rating r-zero" data-score="0">0</button>
+      <button class="rating r-minus1" data-score="-1">-1</button>
+      <button class="rating r-minus2" data-score="-2">-2</button>
+    </section>
+
+    <section class="bottom-info">
+      <div id="contextLine" class="context">Load an audiobook to begin</div>
+      <div class="stats-row">
+        <span id="beatStat">Beat — / —</span>
+        <span id="scoreStat">Score: —</span>
+        <span id="unratedStat">Unrated: —</span>
+      </div>
+      <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
+      <div class="timing-row">
+        <span id="positionStat">00:00:00.000</span>
+        <span id="pauseStat">Pause —</span>
+      </div>
+      <div class="nav-row" aria-label="Navigation unit">
+        <button class="nav-chip active" data-nav="beat">Beat</button>
+        <button class="nav-chip" data-nav="scene">Scene</button>
+        <button class="nav-chip" data-nav="sequence">Sequence</button>
+        <button class="nav-chip" data-nav="movement">Movement</button>
+      </div>
+      <div class="quick-row">
+        <button id="skipBtn" class="quick-btn">Skip / leave unrated</button>
+        <button id="unratedBtn" class="quick-btn">Next unrated</button>
+      </div>
+      <div id="message" class="message">Files stay local to this device.</div>
+    </section>
+  </main>
+
+  <audio id="audio" preload="metadata" playsinline></audio>
+
+  <div id="loadModal" class="modal visible" role="dialog" aria-modal="true" aria-labelledby="loadTitle">
+    <div class="sheet">
+      <h2 id="loadTitle">Open Book</h2>
+      <p>Select the three files copied from your PC. The timing filename should match the CSV, for example <code>book_beats.csv</code> + <code>book_beats.timings.json</code>.</p>
+      <label class="file-row"><span>Audio MP4</span><input id="audioFile" type="file" accept="video/mp4,.mp4"></label>
+      <div id="audioName" class="file-name">Not selected</div>
+      <label class="file-row"><span>Beat CSV</span><input id="csvFile" type="file" accept="text/csv,.csv"></label>
+      <div id="csvName" class="file-name">Not selected</div>
+      <label class="file-row"><span>Timing JSON</span><input id="timingFile" type="file" accept="application/json,.json"></label>
+      <div id="timingName" class="file-name">Not selected</div>
+      <div id="loadError" class="error"></div>
+      <button id="loadBookBtn" class="primary">Load Book</button>
+      <button id="cancelLoadBtn" class="secondary hidden">Cancel</button>
+    </div>
+  </div>
+
+  <div id="resumeModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="resumeTitle">
+    <div class="sheet compact">
+      <h2 id="resumeTitle">Resume Book</h2>
+      <p id="resumeInfo"></p>
+      <button id="resumeBtn" class="primary">Resume saved position</button>
+      <button id="firstBtn" class="secondary">Start at first Beat</button>
+    </div>
+  </div>
+
+  <div id="optionsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="optionsTitle">
+    <div class="sheet options-sheet">
+      <div class="sheet-title-row"><h2 id="optionsTitle">Options</h2><button id="closeOptionsBtn" class="close-btn">Done</button></div>
+      <label class="toggle-row"><span>Pause automatically at Beat boundary</span><input id="pauseAtEndOpt" type="checkbox"></label>
+      <label class="option-row"><span>Playback speed</span><input id="speedOpt" type="range" min="0.5" max="3" step="0.05"><output id="speedOut">1.00×</output></label>
+      <label class="option-row"><span>Default navigation unit</span><select id="defaultNavOpt"><option value="beat">Beat</option><option value="scene">Scene</option><option value="sequence">Sequence</option><option value="movement">Movement</option></select></label>
+      <label class="toggle-row"><span>Start playback after explicit jump</span><input id="startAfterJumpOpt" type="checkbox"></label>
+      <label class="toggle-row"><span>Prompt for bulk score on forward Scene/Sequence/Movement skip</span><input id="bulkPromptOpt" type="checkbox"></label>
+      <label class="toggle-row"><span>Unrated Review Mode</span><input id="unratedReviewOpt" type="checkbox"></label>
+      <label class="toggle-row"><span>Waveform-aware Beat stopping</span><input id="waveformOpt" type="checkbox"></label>
+      <div class="actions-grid">
+        <button id="firstActionBtn" class="secondary">First Beat</button>
+        <button id="unratedActionBtn" class="secondary">Next Unrated</button>
+        <button id="skipActionBtn" class="secondary">Skip Current</button>
+        <button id="exportBtn" class="primary">Export CSV</button>
+        <button id="openBookActionBtn" class="secondary wide">Open Another Book</button>
+        <button id="helpBtn" class="secondary wide">Help</button>
+      </div>
+      <p class="fineprint">Ratings and progress are saved locally on this phone after each action. Export the CSV when you want the updated file back on your PC.</p>
+    </div>
+  </div>
+
+  <div id="bulkModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="bulkTitle">
+    <div class="sheet compact">
+      <h2 id="bulkTitle">Forward Skip</h2>
+      <p id="bulkInfo"></p>
+      <div class="bulk-score-grid">
+        <button data-bulk-score="2" class="r-plus2">+2</button>
+        <button data-bulk-score="1" class="r-plus1">+1</button>
+        <button data-bulk-score="0" class="r-zero">0</button>
+        <button data-bulk-score="-1" class="r-minus1">-1</button>
+        <button data-bulk-score="-2" class="r-minus2">-2</button>
+      </div>
+      <button id="bulkNoScoreBtn" class="secondary">No rating</button>
+      <button id="bulkCancelBtn" class="secondary">Cancel</button>
+    </div>
+  </div>
+
+  <div id="helpModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="sheet options-sheet">
+      <div class="sheet-title-row"><h2 id="helpTitle">Help</h2><button id="closeHelpBtn" class="close-btn">Done</button></div>
+      <p><strong>Rating:</strong> Tap +2, +1, 0, -1, or -2. If you rate before the Beat boundary, playback continues and that boundary will not pause. If you rate at the automatic boundary pause, playback resumes from that exact position without seeking.</p>
+      <p><strong>Skip:</strong> leaves the Score unchanged and continues naturally. In Unrated Review Mode it seeks to the next unrated Beat.</p>
+      <p><strong>Back:</strong> goes to the current navigation unit start, or the previous unit if already at its start. It preserves whether playback was playing or paused.</p>
+      <p><strong>Forward:</strong> in Beat mode jumps to the current Beat pause point. In Scene/Sequence/Movement mode it jumps to the next unit and can bulk-score skipped Beats.</p>
+      <p><strong>Timing:</strong> Waveform-aware mode uses <code>effective_stop_ms</code> from your PC-generated <code>.timings.json</code>. Turning it off uses the CSV <code>Stop_Time</code>.</p>
+      <p><strong>Important on iPhone:</strong> keep Beat Rater in the foreground while relying on automatic boundary pauses. iOS can throttle web timers after the app is backgrounded or the screen locks.</p>
+    </div>
+  </div>
+
+  <script src="core.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

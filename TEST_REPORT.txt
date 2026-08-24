@@ -1,0 +1,20 @@
+Beat Rater PWA v0.1.0 validation
+
+PASS - core JavaScript syntax (node --check)
+PASS - app JavaScript syntax (node --check)
+PASS - CSV parse/write round trip including quoted commas, quotes, and embedded newline
+PASS - timestamp conversion
+PASS - Beat/Scene/Sequence/Movement boundary indexing
+PASS - unrated helpers
+PASS - high-resolution logical playback clock
+PASS - portable timing JSON shape/count validation
+PASS - manifest JSON parse
+PASS - static site served successfully over HTTP
+PASS - ZIP integrity
+
+Not yet validated here:
+- Safari/iPhone media playback behavior with your actual audiobook MP4
+- real-device auto-pause latency at effective_stop_ms
+- iOS Files share/export interaction
+
+Those three need a first on-device test because WebKit/iPhone media scheduling cannot be fully reproduced in this Linux build environment.
