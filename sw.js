@@ -1,4 +1,4 @@
-const CACHE = 'beat-rater-pwa-v0.1.2';
+const CACHE = 'beat-rater-pwa-v0.1.3';
 const APP_ASSETS = [
   './', './index.html', './app.css', './core.js', './app.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'

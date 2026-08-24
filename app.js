@@ -2,7 +2,7 @@
   'use strict';
   const C = globalThis.BeatRaterCore;
   const $ = id => document.getElementById(id);
-  const APP_VERSION = '0.1.2';
+  const APP_VERSION = '0.1.3';
 
   const DEFAULT_OPTIONS = {
     pauseAtBeatEnd: true,
@@ -34,6 +34,9 @@
       this.lastActualMediaMs = 0;
       this.lastVisualUpdate = 0;
       this.lastCheckpoint = 0;
+      this.playRequestStartedAt = 0;
+      this.pollLastMediaMs = 0;
+      this.pollLastMediaAt = Date.now();
       this.boundaryTimer = null;
       this.frameRequest = null;
       this.wakeLock = null;
@@ -125,12 +128,14 @@
     bindAudio() {
       this.audio.addEventListener('play', () => {
         this.playIntent = true;
+        if (!this.playRequestStartedAt) this.playRequestStartedAt = Date.now();
         this.mediaState = 'starting';
         this.render();
       });
 
       this.audio.addEventListener('playing', () => {
         this.playIntent = true;
+        this.playRequestStartedAt = 0;
         this.mediaState = 'playing';
         this.syncPlayingClock('playing');
         this.scheduleBoundaryTimer();
@@ -143,6 +148,7 @@
         this.pausePinMs = null;
         const pos = pin == null ? this.actualMediaMs() : pin;
         this.playIntent = false;
+        this.playRequestStartedAt = 0;
         this.mediaState = this.audio.ended ? 'ended' : 'paused';
         this.clock.pause(pos);
         this.cancelBoundaryTimer();
@@ -208,6 +214,7 @@
           // If WebKit resumed media but omitted/late-fired 'playing', an advancing
           // media timeline is definitive evidence that playback is active.
           if (this.mediaState !== 'playing' && actual > previousActual + 5) {
+            this.playRequestStartedAt = 0;
             this.mediaState = 'playing';
             this.clock.setPosition(actual, true);
             this.scheduleBoundaryTimer();
@@ -230,6 +237,7 @@
 
       this.audio.addEventListener('ended', () => {
         this.playIntent = false;
+        this.playRequestStartedAt = 0;
         this.mediaState = 'ended';
         this.clock.pause(this.actualMediaMs());
         this.cancelBoundaryTimer();
@@ -406,6 +414,7 @@
       this.pausePinMs = null;
       this.autoPaused = false;
       this.playIntent = true;
+      this.playRequestStartedAt = Date.now();
       this.mediaState = 'starting';
       this.audio.playbackRate = this.options.playbackSpeed;
       this.clock.setRate(this.options.playbackSpeed);
@@ -418,6 +427,7 @@
         playPromise = this.audio.play();
       } catch (err) {
         this.playIntent = false;
+        this.playRequestStartedAt = 0;
         this.mediaState = 'paused';
         this.clock.pause(this.actualMediaMs());
         this.render('iPhone blocked playback. Tap Play once to start audio.');
@@ -428,6 +438,7 @@
         await playPromise;
         await this.waitForSeek(target);
         if (!this.audio.paused) {
+          this.playRequestStartedAt = 0;
           this.mediaState = 'playing';
           this.syncPlayingClock('gesture-resume');
           this.scheduleBoundaryTimer();
@@ -436,6 +447,7 @@
         return !this.audio.paused;
       } catch (err) {
         this.playIntent = false;
+        this.playRequestStartedAt = 0;
         this.mediaState = 'paused';
         this.clock.pause(this.actualMediaMs());
         this.render('iPhone blocked playback. Tap Play once to start audio.');
@@ -489,10 +501,61 @@
     }
 
     offerPauseControl() {
-      // A user-initiated play request should change the control to Pause
-      // immediately, even while WebKit is still transitioning to 'playing'.
-      // A rejected play() request resets playIntent/mediaState and re-renders.
-      return this.isPlaying() || (!!this.book && this.playIntent && this.mediaState === 'starting');
+      // The media element is authoritative. Keep a short optimistic grace period
+      // after a user taps Play so the label changes immediately, then let the
+      // polling loop self-correct if WebKit remains paused or drops an event.
+      if (this.isPlaying()) return true;
+      if (!this.book || !this.playIntent || this.mediaState !== 'starting') return false;
+      const age = Date.now() - (this.playRequestStartedAt || 0);
+      return age >= 0 && age < 500;
+    }
+
+    syncPlayPauseControl() {
+      const offerPause = this.offerPauseControl();
+      $('playIcon').textContent = offerPause ? 'Ⅱ' : '▶';
+      $('playLabel').textContent = offerPause ? 'Pause' : 'Play';
+    }
+
+    pollMediaState() {
+      if (!this.book) { this.syncPlayPauseControl(); return; }
+      const now = Date.now();
+      const actual = this.actualMediaMs();
+      const mediaPlaying = !this.audio.paused && !this.audio.ended;
+      const advanced = actual > this.pollLastMediaMs + 5;
+      let stateChanged = false;
+
+      // If iOS changes the real media state without delivering the matching
+      // event promptly, repair our logical state from the element itself.
+      if (!this.audio.seeking && !mediaPlaying && this.mediaState !== 'ended') {
+        const requestAge = this.playRequestStartedAt ? now - this.playRequestStartedAt : Number.POSITIVE_INFINITY;
+        const optimistic = this.playIntent && this.mediaState === 'starting' && requestAge < 500;
+        if (!optimistic && (this.playIntent || this.mediaState === 'playing' || this.clock.playing)) {
+          this.playIntent = false;
+          this.playRequestStartedAt = 0;
+          this.mediaState = 'paused';
+          this.clock.pause(actual);
+          this.cancelBoundaryTimer();
+          this.releaseWakeLock();
+          stateChanged = true;
+        }
+      } else if (!this.audio.seeking && mediaPlaying && advanced) {
+        if (!this.playIntent || this.mediaState !== 'playing' || !this.clock.playing) {
+          this.playIntent = true;
+          this.playRequestStartedAt = 0;
+          this.mediaState = 'playing';
+          this.clock.setRate(Number(this.audio.playbackRate) || Number(this.options.playbackSpeed) || 1);
+          this.clock.setPosition(actual, true);
+          this.scheduleBoundaryTimer();
+          this.requestWakeLock();
+          stateChanged = true;
+        }
+        this.checkBoundary('media-poll');
+      }
+
+      this.pollLastMediaMs = actual;
+      this.pollLastMediaAt = now;
+      if (stateChanged) this.render();
+      else this.syncPlayPauseControl();
     }
 
     syncPlayingClock() {
@@ -506,6 +569,7 @@
       if (!this.book) return false;
       this.playIntent = true;
       this.autoPaused = false;
+      this.playRequestStartedAt = Date.now();
       this.mediaState = 'starting';
       this.audio.playbackRate = this.options.playbackSpeed;
       this.clock.setRate(this.options.playbackSpeed);
@@ -516,6 +580,7 @@
         // Usually 'playing' handles the clock. This fallback covers WebKit event
         // ordering where play() resolves before our handler has observed it.
         if (!this.audio.paused && this.mediaState !== 'playing') {
+          this.playRequestStartedAt = 0;
           this.mediaState = 'playing';
           this.syncPlayingClock('play-promise');
         }
@@ -523,6 +588,7 @@
         await this.requestWakeLock();
       } catch (err) {
         this.playIntent = false;
+        this.playRequestStartedAt = 0;
         this.mediaState = 'paused';
         this.clock.pause(this.actualMediaMs());
         this.render('iPhone blocked playback. Tap Play once to start audio.');
@@ -536,6 +602,7 @@
       if (!this.book) return;
       const pos = this.displayPositionMs();
       this.playIntent = false;
+      this.playRequestStartedAt = 0;
       this.mediaState = 'paused';
       this.pausePinMs = pos;
       this.clock.pause(pos);
@@ -569,6 +636,7 @@
       const target = Math.max(0, Number(ms) || 0);
       this.cancelBoundaryTimer();
       this.playIntent = false;
+      this.playRequestStartedAt = 0;
       // A seek is not a Beat-boundary pause. Never leave a pinned pause value
       // behind when the element was already paused; it could corrupt the next
       // real pause event.
@@ -637,7 +705,7 @@
         this.autoPaused = false;
         await this.safePlay();
         this.saveState();
-        this.render(`Saved ${score} early; this Beat boundary will not pause.`);
+        this.render(`Saved score ${score}.`);
         return;
       }
 
@@ -696,16 +764,46 @@
     async goForward() {
       if (!this.book) return;
       if (this.navUnit === 'beat') {
-        // This is intentionally the same as Windows D-in-Beat-mode: skip to the
-        // current Beat's pause point and stop for rating. The UI labels it Beat
-        // End now so it no longer looks like an ordinary next-track button.
-        const stop = this.effectiveStopMs();
+        const idx = this.currentIdx;
+        const stop = this.effectiveStopMs(idx);
+        const wasPlaying = this.isPlaying();
+        const alreadyRated = C.isRated(this.book.rows[idx]);
+
+        // If this Beat is already scored and the listener is currently playing,
+        // Beat End means "skip the rest of this rated Beat": seek to its pause
+        // point and continue immediately into the next Beat. Starting playback is
+        // requested in the button gesture so iOS cannot lose user activation.
+        if (alreadyRated && wasPlaying) {
+          this.preRatedIdx = null;
+          this.autoPaused = false;
+          if (idx < this.book.rows.length - 1) {
+            this.currentIdx = idx + 1;
+            const started = await this.seekAndPlayFromUserGesture(stop);
+            this.saveState(stop);
+            this.render(started
+              ? `Skipped rated Beat ${idx + 1}; continuing into Beat ${this.currentIdx + 1}.`
+              : `Skipped rated Beat ${idx + 1}. Tap Play to continue into Beat ${this.currentIdx + 1}.`);
+          } else {
+            // There is no next Beat, but do not introduce a new pause merely
+            // because the final Beat was already rated.
+            this.preRatedIdx = idx;
+            const started = await this.seekAndPlayFromUserGesture(stop);
+            this.saveState(stop);
+            this.render(started ? 'Skipped to the end of the rated final Beat; playing.' : 'Skipped to the end of the rated final Beat.');
+          }
+          return;
+        }
+
+        // Unrated Beats, or rated Beats skipped while already paused, still land
+        // at the current Beat pause point and remain paused.
         this.preRatedIdx = null;
         await this.seekMs(stop, false);
         this.clock.setPosition(stop, false);
         this.autoPaused = true;
         this.saveState(stop);
-        this.render('Jumped to the current Beat pause point. Rate it or leave it unrated.');
+        this.render(alreadyRated
+          ? 'Jumped to the end of this rated Beat; playback remains paused.'
+          : 'Jumped to the current Beat pause point. Rate it or leave it unrated.');
         return;
       }
 
@@ -800,6 +898,11 @@
       };
       this.frameRequest = requestAnimationFrame(frame);
 
+      // iOS occasionally delays or drops media events. Poll the real
+      // HTMLAudioElement state five times per second so the Play/Pause control
+      // and logical playback state can self-correct quickly.
+      setInterval(() => this.pollMediaState(), 200);
+
       // Lower-frequency safety heartbeat. Automatic pausing does not depend on a
       // single 5 ms setInterval anymore; rAF + a boundary timeout + timeupdate +
       // this heartbeat all call the same idempotent boundary checker.
@@ -868,6 +971,7 @@
 
       this.autoPaused = true;
       this.playIntent = false;
+      this.playRequestStartedAt = 0;
       this.mediaState = 'paused';
       this.pausePinMs = pos;
       this.clock.pause(pos);
@@ -884,9 +988,7 @@
       $('versionBadge').textContent = `v${APP_VERSION}`;
 
       const playing = this.isPlaying();
-      const offerPause = this.offerPauseControl();
-      $('playIcon').textContent = offerPause ? 'Ⅱ' : '▶';
-      $('playLabel').textContent = offerPause ? 'Pause' : 'Play';
+      this.syncPlayPauseControl();
 
       const backLabels = {
         beat: 'Beat Start',
@@ -916,9 +1018,7 @@
       const pos = this.displayPositionMs();
       $('contextLine').textContent = `Movement ${r.Movement} • Sequence ${r.Sequence} • Scene ${r.Scene} • Beat ${r.Beat}`;
       $('beatStat').textContent = `Beat ${this.currentIdx + 1} / ${this.book.rows.length}`;
-      const ratedEarly = this.preRatedIdx === this.currentIdx;
-      $('scoreStat').textContent = `Score: ${C.isRated(r) ? r.Score : 'unrated'}${ratedEarly ? ' · RATED EARLY' : ''}`;
-      $('scoreStat').classList.toggle('score-early', ratedEarly);
+      $('scoreStat').textContent = `Score: ${C.isRated(r) ? r.Score : 'unrated'}`;
       $('unratedStat').textContent = `Unrated: ${C.unratedCount(this.book.rows)}`;
       $('positionStat').textContent = this.displayClock(pos);
       const delta = stop - csvStop;
@@ -926,14 +1026,12 @@
         ? `Pause ${C.msToTimestamp(stop)} · CSV ${C.msToTimestamp(csvStop)} · ${delta > 0 ? '+' : ''}${delta} ms`
         : `Pause ${C.msToTimestamp(stop)}`;
       $('progressFill').style.width = `${Math.max(0, Math.min(100, (this.currentIdx + 1) / this.book.rows.length * 100))}%`;
-      $('timingBadge').textContent = this.options.waveformAwareStopping ? 'Waveform timing' : 'CSV timing';
 
       const stateText = this.mediaState === 'buffering' ? 'Buffering' : (this.mediaState === 'starting' ? 'Starting' : (playing ? 'Playing' : 'Paused'));
       $('playbackStat').textContent = `${stateText} • ${Number(this.options.playbackSpeed).toFixed(2)}×`;
       $('reviewStat').textContent = `Review ${this.options.unratedReviewMode ? 'ON' : 'OFF'}`;
 
       document.querySelectorAll('.nav-chip').forEach(b => b.classList.toggle('active', b.dataset.nav === this.navUnit));
-      if (this.preRatedIdx === this.currentIdx) $('message').textContent = 'Rated early — this Beat boundary will not pause.';
     }
 
     async requestWakeLock() {

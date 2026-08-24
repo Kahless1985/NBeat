@@ -17,8 +17,7 @@
   <main id="app" class="app-shell" aria-live="polite">
     <header class="top-area">
       <div class="title-row">
-        <div class="title-wrap"><h1>Beat Rater</h1><span id="versionBadge" class="version-badge">v0.1.2</span></div>
-        <span id="timingBadge" class="badge">No book</span>
+        <div class="title-wrap"><h1>Beat Rater</h1><span id="versionBadge" class="version-badge">v0.1.3</span></div>
       </div>
       <div class="transport-grid" aria-label="Playback controls">
         <button id="backBtn" class="transport"><span class="transport-icon">«</span><span id="backLabel">Beat Start</span></button>
@@ -137,7 +136,7 @@
       <p><strong>Rating:</strong> Tap +2, +1, 0, -1, or -2. If you rate before the Beat boundary, playback continues and that boundary will not pause. If you rate at the automatic boundary pause, playback resumes from that exact position without seeking.</p>
       <p><strong>Skip:</strong> leaves the Score unchanged and continues naturally. In Unrated Review Mode it seeks to the next unrated Beat.</p>
       <p><strong>Back:</strong> goes to the current navigation unit start, or the previous unit if already at its start. It preserves whether playback was playing or paused.</p>
-      <p><strong>Forward / Beat End:</strong> this intentionally matches the Windows app. In Beat mode it jumps to the current Beat pause point and pauses for rating. In Scene/Sequence/Movement mode it jumps to the next unit and can bulk-score skipped Beats.</p>
+      <p><strong>Forward / Beat End:</strong> in Beat mode it jumps to the current Beat pause point. If the Beat is already rated and audio was playing, it continues immediately into the next Beat; otherwise it remains paused at the boundary. In Scene/Sequence/Movement mode it jumps to the next unit and can bulk-score skipped Beats.</p>
       <p><strong>Timing:</strong> Waveform-aware mode uses <code>effective_stop_ms</code> from your PC-generated <code>.timings.json</code>. Turning it off uses the CSV <code>Stop_Time</code>.</p>
       <p><strong>Important on iPhone:</strong> keep Beat Rater in the foreground while relying on automatic boundary pauses. iOS can throttle web timers after the app is backgrounded or the screen locks.</p>
     </div>

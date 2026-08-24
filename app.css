@@ -21,7 +21,6 @@ button { color: inherit; }
 .title-wrap { display: flex; align-items: baseline; gap: 7px; }
 .version-badge { color: #6e6e73; font-size: 9px; font-weight: 650; }
 h1 { font-size: 20px; line-height: 1.1; margin: 0; font-weight: 700; letter-spacing: .2px; }
-.badge { color: var(--muted); font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px; white-space: nowrap; }
 .transport-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .transport { background: #121214; border: 1px solid #252529; border-radius: 12px; min-height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600; }
 .transport:active, .quick-btn:active, .nav-chip:active, .secondary:active, .primary:active { transform: scale(.98); }
@@ -38,7 +37,6 @@ h1 { font-size: 20px; line-height: 1.1; margin: 0; font-weight: 700; letter-spac
 .context { text-align: center; font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stats-row, .timing-row, .status-row { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: #c7c7cc; }
 
-.score-early { color: #ffd60a !important; font-weight: 750; }
 .timing-row { font-size: 9.5px; }
 .status-row { color: #8e8e93; font-size: 9.5px; }
 .progress-track { height: 3px; background: #1c1c1e; overflow: hidden; border-radius: 999px; }
