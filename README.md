@@ -1,6 +1,6 @@
-# Beat Rater PWA v0.1.0
+# Beat Rater PWA v0.1.1
 
-A private, installable iPhone web app that mirrors the behavior of Beat Rater v0.1.14 while using the PC-generated waveform timing cache.
+A private, installable iPhone web app based on Beat Rater v0.1.14 while using the PC-generated waveform timing cache.
 
 ## Book files
 
@@ -45,3 +45,16 @@ Automatic boundary timing should be used with the PWA visible in the foreground.
 Double-click `serve_preview.bat` if Python is installed, then test at `http://localhost:8000`.
 
 For iPhone installation, host this folder over HTTPS (GitHub Pages is free) and use Safari's **Add to Home Screen** / **Open as Web App**.
+
+
+## v0.1.1 iPhone playback fixes
+
+- Reworked playback-state synchronization so the HTML audio element and high-resolution logical clock cannot silently disagree.
+- The Play/Pause icon now follows the actual media element.
+- A `stalled` event no longer freezes the logical timer while audio may still be playing.
+- `waiting`/buffer recovery, `playing`, `pause`, `seeked`, `timeupdate`, system play/pause, and visibility changes now re-anchor state explicitly.
+- Boundary detection now has four cooperating checks: animation frames, a scheduled boundary timeout, media `timeupdate`, and a 500 ms safety heartbeat.
+- Progress is checkpointed while playing and when the PWA is hidden/closed.
+- Beat-mode Forward is relabeled **Beat End** because the Windows behavior intentionally seeks to the current Beat pause point and pauses there.
+- Main display now shows playback speed, Unrated Review state, and the original CSV stop when waveform timing differs.
+- The service worker prefers fresh app files while the site exists, with offline cache fallback, making test updates less likely to remain stuck on an old version.

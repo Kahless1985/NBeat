@@ -18,6 +18,8 @@ button { color: inherit; }
 .app-shell { min-height: 100dvh; height: 100dvh; padding: calc(var(--safe-top) + 8px) 10px calc(var(--safe-bottom) + 8px); display: flex; flex-direction: column; gap: 8px; overflow: hidden; background: #000; }
 .top-area { flex: 0 0 auto; }
 .title-row { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 6px; }
+.title-wrap { display: flex; align-items: baseline; gap: 7px; }
+.version-badge { color: #6e6e73; font-size: 9px; font-weight: 650; }
 h1 { font-size: 20px; line-height: 1.1; margin: 0; font-weight: 700; letter-spacing: .2px; }
 .badge { color: var(--muted); font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px; white-space: nowrap; }
 .transport-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
@@ -34,7 +36,9 @@ h1 { font-size: 20px; line-height: 1.1; margin: 0; font-weight: 700; letter-spac
 .r-minus2 { color: #ff453a; background: rgba(255,69,58,.07); border-color: #c7352d; }
 .bottom-info { flex: 0 0 auto; display: flex; flex-direction: column; gap: 5px; padding: 2px 2px 0; }
 .context { text-align: center; font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.stats-row, .timing-row { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: #c7c7cc; }
+.stats-row, .timing-row, .status-row { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: #c7c7cc; }
+.timing-row { font-size: 9.5px; }
+.status-row { color: #8e8e93; font-size: 9.5px; }
 .progress-track { height: 3px; background: #1c1c1e; overflow: hidden; border-radius: 999px; }
 .progress-fill { height: 100%; width: 0%; background: #0a84ff; }
 .nav-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 4px; }

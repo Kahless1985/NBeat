@@ -1,7 +1,12 @@
-Beat Rater PWA v0.1.0 validation
+Beat Rater PWA v0.1.1 validation
 
+Windows reference baseline:
+PASS - Beat Rater Windows v0.1.14 regression suite: 34/34 tests
+
+PWA static/core validation:
 PASS - core JavaScript syntax (node --check)
 PASS - app JavaScript syntax (node --check)
+PASS - service worker JavaScript syntax (node --check)
 PASS - CSV parse/write round trip including quoted commas, quotes, and embedded newline
 PASS - timestamp conversion
 PASS - Beat/Scene/Sequence/Movement boundary indexing
@@ -9,12 +14,19 @@ PASS - unrated helpers
 PASS - high-resolution logical playback clock
 PASS - portable timing JSON shape/count validation
 PASS - manifest JSON parse
-PASS - static site served successfully over HTTP
-PASS - ZIP integrity
+PASS - all JavaScript-referenced DOM IDs exist in index.html
 
-Not yet validated here:
-- Safari/iPhone media playback behavior with your actual audiobook MP4
-- real-device auto-pause latency at effective_stop_ms
-- iOS Files share/export interaction
+PWA playback integration regression tests with a fake HTML media element:
+PASS - actual playing state shows Pause control
+PASS - actual pause state shows Play control
+PASS - system/media play restores logical playback state
+PASS - stalled event does not freeze the logical playback clock
+PASS - automatic stop pauses at effective_stop_ms
+PASS - automatic stop sets auto-paused state and updates the control icon
+PASS - Beat navigation Forward seeks to effective Beat end and deliberately pauses there
+PASS - Beat-mode Forward is visibly labeled Beat End
 
-Those three need a first on-device test because WebKit/iPhone media scheduling cannot be fully reproduced in this Linux build environment.
+Still requires real iPhone validation:
+- WebKit pause latency against actual audiobook MP4 at effective_stop_ms
+- iOS Files/share/export interaction
+- behavior if the PWA is backgrounded or the phone locks (foreground use is recommended)

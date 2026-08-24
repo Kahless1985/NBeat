@@ -50,3 +50,8 @@ You can also use iCloud Drive or another Files provider if you prefer.
 Beat Rater uses the PC-generated `effective_stop_ms` values when Waveform-aware Beat stopping is ON. The PWA uses a high-resolution monotonic JavaScript clock for boundary checks, analogous to the Windows app's high-resolution playback clock.
 
 For reliable automatic boundary pauses, keep Beat Rater visible while listening/rating. iOS can throttle web timers if a PWA is sent to the background or the screen locks.
+
+
+## Updating an existing installed test copy
+
+After replacing the files in your GitHub Pages repository, open the site in Safari on the iPhone while online and refresh it. Confirm the small version text beside **Beat Rater** says **v0.1.1**. Then close and reopen the Home Screen app. If it still shows an older version, remove the old Home Screen icon and add the site to the Home Screen again. Your source MP4/CSV/timing files are not stored in the website cache.
