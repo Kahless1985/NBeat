@@ -37,6 +37,8 @@ h1 { font-size: 20px; line-height: 1.1; margin: 0; font-weight: 700; letter-spac
 .bottom-info { flex: 0 0 auto; display: flex; flex-direction: column; gap: 5px; padding: 2px 2px 0; }
 .context { text-align: center; font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stats-row, .timing-row, .status-row { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: #c7c7cc; }
+
+.score-early { color: #ffd60a !important; font-weight: 750; }
 .timing-row { font-size: 9.5px; }
 .status-row { color: #8e8e93; font-size: 9.5px; }
 .progress-track { height: 3px; background: #1c1c1e; overflow: hidden; border-radius: 999px; }

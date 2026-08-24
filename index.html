@@ -17,11 +17,11 @@
   <main id="app" class="app-shell" aria-live="polite">
     <header class="top-area">
       <div class="title-row">
-        <div class="title-wrap"><h1>Beat Rater</h1><span id="versionBadge" class="version-badge">v0.1.1</span></div>
+        <div class="title-wrap"><h1>Beat Rater</h1><span id="versionBadge" class="version-badge">v0.1.2</span></div>
         <span id="timingBadge" class="badge">No book</span>
       </div>
       <div class="transport-grid" aria-label="Playback controls">
-        <button id="backBtn" class="transport"><span class="transport-icon">«</span><span>Back</span></button>
+        <button id="backBtn" class="transport"><span class="transport-icon">«</span><span id="backLabel">Beat Start</span></button>
         <button id="playBtn" class="transport"><span id="playIcon" class="transport-icon">▶</span><span id="playLabel">Play</span></button>
         <button id="forwardBtn" class="transport"><span class="transport-icon">»</span><span id="forwardLabel">Beat End</span></button>
         <button id="optionsBtn" class="transport"><span class="transport-icon">⚙</span><span>Options</span></button>
@@ -45,7 +45,7 @@
       </div>
       <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
       <div class="timing-row">
-        <span id="positionStat">00:00:00.000</span>
+        <span id="positionStat">00:00:00</span>
         <span id="pauseStat">Pause —</span>
       </div>
       <div class="status-row">
