@@ -2,7 +2,7 @@
   'use strict';
   const C = globalThis.BeatRaterCore;
   const $ = id => document.getElementById(id);
-  const APP_VERSION = '0.1.3';
+  const APP_VERSION = '0.1.4';
 
   const DEFAULT_OPTIONS = {
     pauseAtBeatEnd: true,
@@ -41,6 +41,7 @@
       this.frameRequest = null;
       this.wakeLock = null;
       this.bulkResolver = null;
+      this.pendingBooks = [];
 
       this.bindUI();
       this.bindAudio();
@@ -68,10 +69,15 @@
       $('unratedBtn').addEventListener('click', () => this.jumpToNextUnrated(true));
       document.querySelectorAll('.nav-chip').forEach(b => b.addEventListener('click', () => this.setNav(b.dataset.nav)));
 
-      for (const [inputId, labelId] of [['audioFile','audioName'],['csvFile','csvName'],['timingFile','timingName']]) {
-        $(inputId).addEventListener('change', e => { $(labelId).textContent = e.target.files?.[0]?.name || 'Not selected'; });
-      }
-      $('loadBookBtn').addEventListener('click', () => this.loadBookFromInputs());
+      $('bookFolder').addEventListener('change', e => this.prepareBookCandidates(e.target.files, 'folder'));
+      $('bookFiles').addEventListener('change', e => this.prepareBookCandidates(e.target.files, 'files'));
+      $('loadBookBtn').addEventListener('click', () => this.loadSelectedBook());
+
+      // Every button gets immediate touch feedback. Rating buttons use a colored
+      // fill flash; other controls use a shorter neutral pulse.
+      document.querySelectorAll('button').forEach(button => {
+        button.addEventListener('pointerdown', () => this.animateButtonPress(button));
+      });
       $('cancelLoadBtn').addEventListener('click', () => this.hide('loadModal'));
       $('resumeBtn').addEventListener('click', () => this.startFromSaved());
       $('firstBtn').addEventListener('click', () => this.startFromFirst());
@@ -246,7 +252,7 @@
         this.render('Reached end of audio.');
       });
 
-      this.audio.addEventListener('error', () => this.render('Audio playback error. Try reopening the MP4.'));
+      this.audio.addEventListener('error', () => this.render('Audio playback error. Try reopening the MP3/MP4.'));
     }
 
     setOption(name, value) {
@@ -271,14 +277,71 @@
 
     show(id) { $(id).classList.add('visible'); }
     hide(id) { $(id).classList.remove('visible'); }
-    showLoadModal(canCancel) { $('cancelLoadBtn').classList.toggle('hidden', !canCancel); $('loadError').textContent = ''; this.show('loadModal'); }
-
-    async loadBookFromInputs() {
-      const audioFile = $('audioFile').files?.[0];
-      const csvFile = $('csvFile').files?.[0];
-      const timingFile = $('timingFile').files?.[0];
+    showLoadModal(canCancel) {
+      $('cancelLoadBtn').classList.toggle('hidden', !canCancel);
       $('loadError').textContent = '';
-      if (!audioFile || !csvFile || !timingFile) { $('loadError').textContent = 'Select the MP4, CSV, and timing JSON.'; return; }
+      this.show('loadModal');
+    }
+
+    animateButtonPress(button) {
+      if (!button?.classList) return;
+      const ratingLike = button.classList.contains('rating') || button.dataset?.bulkScore !== undefined;
+      const cls = ratingLike ? 'rating-pulse' : 'control-pulse';
+      button.classList.remove(cls);
+      // Restart the CSS animation even for very fast repeated taps.
+      void button.offsetWidth;
+      button.classList.add(cls);
+      setTimeout(() => button.classList.remove(cls), ratingLike ? 240 : 190);
+    }
+
+    prepareBookCandidates(fileList, source) {
+      const result = C.discoverBookSets(fileList);
+      this.pendingBooks = result.books;
+      const count = Array.from(fileList || []).length;
+      if (source === 'folder') $('bookFolderName').textContent = count ? `${count} file(s) visible in selected folder` : 'No folder selected';
+      else $('bookFilesName').textContent = count ? `${count} file(s) selected` : 'No files selected';
+
+      const choice = $('bookChoice');
+      choice.innerHTML = '';
+      for (let i = 0; i < result.books.length; i++) {
+        const book = result.books[i];
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = book.dir ? `${book.audioFile.name} — ${book.dir}` : book.audioFile.name;
+        choice.appendChild(opt);
+      }
+      choice.value = '0';
+      $('bookChoiceWrap').classList.toggle('hidden', result.books.length <= 1);
+      $('loadBookBtn').disabled = result.books.length === 0;
+
+      if (result.books.length === 1) {
+        const b = result.books[0];
+        $('detectedBook').textContent = `Ready: ${b.audioFile.name} + ${b.csvFile.name} + ${b.timingFile.name}`;
+        $('loadError').textContent = '';
+      } else if (result.books.length > 1) {
+        $('detectedBook').textContent = `Found ${result.books.length} complete book sets. Choose the audio file below.`;
+        $('loadError').textContent = '';
+      } else {
+        $('detectedBook').textContent = 'No complete book set found.';
+        const first = result.incomplete[0];
+        $('loadError').textContent = first
+          ? `Found ${first.audioFile.name}, but missing ${first.missing.join(' and ')} in the same folder. Files must share the same base name.`
+          : 'No MP3 or MP4 with a matching .csv and .timings.json was found.';
+      }
+    }
+
+    async loadSelectedBook() {
+      const selected = Math.max(0, Math.min(Number($('bookChoice').value) || 0, this.pendingBooks.length - 1));
+      const candidate = this.pendingBooks[selected];
+      $('loadError').textContent = '';
+      if (!candidate) {
+        $('loadError').textContent = 'Choose a folder or select the matching audio, CSV, and timing JSON together.';
+        return;
+      }
+      return this.loadBookFiles(candidate.audioFile, candidate.csvFile, candidate.timingFile);
+    }
+
+    async loadBookFiles(audioFile, csvFile, timingFile) {
       try {
         const csvText = await csvFile.text();
         const parsed = C.parseCSV(csvText);
@@ -287,8 +350,12 @@
         const unitStarts = C.buildUnitStarts(parsed.rows);
         const key = C.bookStateKey(parsed.rows, audioFile.name, csvFile.name);
         const boundaryHash = (await C.sha256Hex(C.boundaryHashText(parsed.rows))) || C.boundaryHashText(parsed.rows);
-        const expectedTimingName = csvFile.name.replace(/\.csv$/i, '') + '.timings.json';
-        const nameWarning = timingFile.name !== expectedTimingName ? `Expected ${expectedTimingName}; selected ${timingFile.name}.` : '';
+        const audioBase = audioFile.name.replace(/\.(?:mp3|mp4)$/i, '');
+        const expectedCsvName = `${audioBase}.csv`;
+        const expectedTimingName = `${audioBase}.timings.json`;
+        const nameWarnings = [];
+        if (csvFile.name.toLowerCase() !== expectedCsvName.toLowerCase()) nameWarnings.push(`Expected ${expectedCsvName}; selected ${csvFile.name}.`);
+        if (timingFile.name.toLowerCase() !== expectedTimingName.toLowerCase()) nameWarnings.push(`Expected ${expectedTimingName}; selected ${timingFile.name}.`);
 
         this.stopPlaybackForBookChange();
         if (this.book?.audioURL) URL.revokeObjectURL(this.book.audioURL);
@@ -313,8 +380,7 @@
         this.restoreSavedScores();
         this.hide('loadModal');
         const saved = this.readState();
-        const warnings = [...timing.warnings];
-        if (nameWarning) warnings.push(nameWarning);
+        const warnings = [...timing.warnings, ...nameWarnings];
         this.book.warning = warnings.join(' ');
         if (saved && saved.boundaryHash === boundaryHash) {
           this.restoreProgress(saved);
@@ -351,9 +417,9 @@
       if (this.audio.readyState >= 1) return Promise.resolve();
       return new Promise((resolve, reject) => {
         const done = () => { cleanup(); resolve(); };
-        const fail = () => { cleanup(); reject(new Error('Could not read MP4 metadata.')); };
+        const fail = () => { cleanup(); reject(new Error('Could not read audio metadata.')); };
         const cleanup = () => { clearTimeout(timer); this.audio.removeEventListener('loadedmetadata', done); this.audio.removeEventListener('error', fail); };
-        const timer = setTimeout(() => { cleanup(); reject(new Error('Timed out reading MP4 metadata.')); }, 15000);
+        const timer = setTimeout(() => { cleanup(); reject(new Error('Timed out reading audio metadata.')); }, 15000);
         this.audio.addEventListener('loadedmetadata', done, { once: true });
         this.audio.addEventListener('error', fail, { once: true });
       });
@@ -835,6 +901,7 @@
       if (this.bulkResolver) {
         const r = this.bulkResolver;
         this.bulkResolver = null;
+      this.pendingBooks = [];
         r(value);
       }
     }
@@ -983,6 +1050,15 @@
       return true;
     }
 
+    pauseDisplayTarget() {
+      if (!this.book || !this.options.pauseAtBeatEnd) return null;
+      if (this.preRatedIdx === this.currentIdx) {
+        if (this.currentIdx >= this.book.rows.length - 1) return { idx: null, prefix: 'Next pause' };
+        return { idx: this.currentIdx + 1, prefix: 'Next pause' };
+      }
+      return { idx: this.currentIdx, prefix: 'Pause' };
+    }
+
     render(message = null) {
       if (message != null) $('message').textContent = message;
       $('versionBadge').textContent = `v${APP_VERSION}`;
@@ -1013,18 +1089,28 @@
       }
 
       const r = this.book.rows[this.currentIdx];
-      const stop = this.effectiveStopMs();
-      const csvStop = r._stop_ms;
       const pos = this.displayPositionMs();
       $('contextLine').textContent = `Movement ${r.Movement} • Sequence ${r.Sequence} • Scene ${r.Scene} • Beat ${r.Beat}`;
       $('beatStat').textContent = `Beat ${this.currentIdx + 1} / ${this.book.rows.length}`;
       $('scoreStat').textContent = `Score: ${C.isRated(r) ? r.Score : 'unrated'}`;
       $('unratedStat').textContent = `Unrated: ${C.unratedCount(this.book.rows)}`;
       $('positionStat').textContent = this.displayClock(pos);
-      const delta = stop - csvStop;
-      $('pauseStat').textContent = delta
-        ? `Pause ${C.msToTimestamp(stop)} · CSV ${C.msToTimestamp(csvStop)} · ${delta > 0 ? '+' : ''}${delta} ms`
-        : `Pause ${C.msToTimestamp(stop)}`;
+
+      const pauseTarget = this.pauseDisplayTarget();
+      if (!pauseTarget) {
+        $('pauseStat').textContent = 'Auto pause OFF';
+      } else if (pauseTarget.idx == null) {
+        $('pauseStat').textContent = 'Next pause —';
+      } else {
+        const pauseRow = this.book.rows[pauseTarget.idx];
+        const stop = this.effectiveStopMs(pauseTarget.idx);
+        const csvStop = pauseRow._stop_ms;
+        const delta = stop - csvStop;
+        const beatSuffix = pauseTarget.idx !== this.currentIdx ? ` · Beat ${pauseTarget.idx + 1}` : '';
+        $('pauseStat').textContent = delta
+          ? `${pauseTarget.prefix} ${C.msToTimestamp(stop)}${beatSuffix} · CSV ${C.msToTimestamp(csvStop)} · ${delta > 0 ? '+' : ''}${delta} ms`
+          : `${pauseTarget.prefix} ${C.msToTimestamp(stop)}${beatSuffix}`;
+      }
       $('progressFill').style.width = `${Math.max(0, Math.min(100, (this.currentIdx + 1) / this.book.rows.length * 100))}%`;
 
       const stateText = this.mediaState === 'buffering' ? 'Buffering' : (this.mediaState === 'starting' ? 'Starting' : (playing ? 'Playing' : 'Paused'));

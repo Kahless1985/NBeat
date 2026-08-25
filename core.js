@@ -168,6 +168,56 @@
     return { stops, warnings, version: payload.version ?? null };
   }
 
+
+  function filePathParts(file) {
+    const raw = String(file?.webkitRelativePath || file?.name || '').replace(/\\/g, '/');
+    const slash = raw.lastIndexOf('/');
+    return {
+      dir: slash >= 0 ? raw.slice(0, slash) : '',
+      name: slash >= 0 ? raw.slice(slash + 1) : raw
+    };
+  }
+
+  function discoverBookSets(files) {
+    const list = Array.from(files || []).filter(Boolean);
+    const entries = list.map(file => ({ file, ...filePathParts(file) }));
+    const index = new Map();
+    for (const entry of entries) {
+      const key = `${entry.dir.toLowerCase()}\u001f${entry.name.toLowerCase()}`;
+      if (!index.has(key)) index.set(key, entry.file);
+    }
+
+    const books = [];
+    const incomplete = [];
+    for (const entry of entries) {
+      const m = entry.name.match(/^(.*)\.(mp3|mp4)$/i);
+      if (!m) continue;
+      const base = m[1];
+      const prefix = `${entry.dir.toLowerCase()}\u001f${base.toLowerCase()}`;
+      const csvFile = index.get(`${prefix}.csv`);
+      const timingFile = index.get(`${prefix}.timings.json`);
+      const book = {
+        base,
+        dir: entry.dir,
+        audioFile: entry.file,
+        csvFile: csvFile || null,
+        timingFile: timingFile || null
+      };
+      if (csvFile && timingFile) books.push(book);
+      else incomplete.push({
+        ...book,
+        missing: [!csvFile ? `${base}.csv` : '', !timingFile ? `${base}.timings.json` : ''].filter(Boolean)
+      });
+    }
+
+    books.sort((a, b) => {
+      const ak = `${a.dir}/${a.audioFile.name}`.toLowerCase();
+      const bk = `${b.dir}/${b.audioFile.name}`.toLowerCase();
+      return ak.localeCompare(bk);
+    });
+    return { books, incomplete };
+  }
+
   class PlaybackClock {
     constructor(rate = 1, perfNow = () => performance.now()) {
       this.perfNow = perfNow;
@@ -200,6 +250,6 @@
     REQUIRED_COLUMNS, NAV_UNITS, timestampToMs, msToTimestamp, parseCSV, serializeCSV,
     buildUnitStarts, currentUnitStart, nextUnitStart, previousUnitStart,
     isRated, unratedCount, nextUnratedIndex, beatId, bookStateKey,
-    boundaryHashText, sha256Hex, validateTimings, PlaybackClock
+    boundaryHashText, sha256Hex, validateTimings, discoverBookSets, PlaybackClock
   };
 });

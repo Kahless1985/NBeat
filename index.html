@@ -17,7 +17,7 @@
   <main id="app" class="app-shell" aria-live="polite">
     <header class="top-area">
       <div class="title-row">
-        <div class="title-wrap"><h1>Beat Rater</h1><span id="versionBadge" class="version-badge">v0.1.3</span></div>
+        <div class="title-wrap"><h1>Beat Rater</h1><span id="versionBadge" class="version-badge">v0.1.4</span></div>
       </div>
       <div class="transport-grid" aria-label="Playback controls">
         <button id="backBtn" class="transport"><span class="transport-icon">«</span><span id="backLabel">Beat Start</span></button>
@@ -70,15 +70,16 @@
   <div id="loadModal" class="modal visible" role="dialog" aria-modal="true" aria-labelledby="loadTitle">
     <div class="sheet">
       <h2 id="loadTitle">Open Book</h2>
-      <p>Select the three files copied from your PC. The timing filename should match the CSV, for example <code>book_beats.csv</code> + <code>book_beats.timings.json</code>.</p>
-      <label class="file-row"><span>Audio MP4</span><input id="audioFile" type="file" accept="video/mp4,.mp4"></label>
-      <div id="audioName" class="file-name">Not selected</div>
-      <label class="file-row"><span>Beat CSV</span><input id="csvFile" type="file" accept="text/csv,.csv"></label>
-      <div id="csvName" class="file-name">Not selected</div>
-      <label class="file-row"><span>Timing JSON</span><input id="timingFile" type="file" accept="application/json,.json"></label>
-      <div id="timingName" class="file-name">Not selected</div>
+      <p>Files use one shared base name, for example <code>2026-08-02_15-29-32.mp3</code> or <code>.mp4</code>, plus <code>2026-08-02_15-29-32.csv</code> and <code>2026-08-02_15-29-32.timings.json</code>.</p>
+      <label class="file-row"><span>Book folder</span><input id="bookFolder" type="file" webkitdirectory directory multiple></label>
+      <div id="bookFolderName" class="file-name">No folder selected</div>
+      <div class="picker-or">or, if folder selection is unavailable</div>
+      <label class="file-row"><span>Book files</span><input id="bookFiles" type="file" multiple accept="audio/mpeg,audio/mp4,video/mp4,.mp3,.mp4,.csv,.json"></label>
+      <div id="bookFilesName" class="file-name">No files selected</div>
+      <div id="detectedBook" class="detected-book">Choose the folder containing your book files.</div>
+      <label id="bookChoiceWrap" class="option-row hidden"><span>Audio file</span><select id="bookChoice"></select></label>
       <div id="loadError" class="error"></div>
-      <button id="loadBookBtn" class="primary">Load Book</button>
+      <button id="loadBookBtn" class="primary" disabled>Load Book</button>
       <button id="cancelLoadBtn" class="secondary hidden">Cancel</button>
     </div>
   </div>
@@ -137,6 +138,7 @@
       <p><strong>Skip:</strong> leaves the Score unchanged and continues naturally. In Unrated Review Mode it seeks to the next unrated Beat.</p>
       <p><strong>Back:</strong> goes to the current navigation unit start, or the previous unit if already at its start. It preserves whether playback was playing or paused.</p>
       <p><strong>Forward / Beat End:</strong> in Beat mode it jumps to the current Beat pause point. If the Beat is already rated and audio was playing, it continues immediately into the next Beat; otherwise it remains paused at the boundary. In Scene/Sequence/Movement mode it jumps to the next unit and can bulk-score skipped Beats.</p>
+      <p><strong>Files:</strong> MP3 and MP4 are supported. Use matching base names for the audio, CSV, and timing JSON. On current iOS, choosing the containing folder lets Beat Rater discover the matching files automatically. The fallback picker can select the three matching files together.</p>
       <p><strong>Timing:</strong> Waveform-aware mode uses <code>effective_stop_ms</code> from your PC-generated <code>.timings.json</code>. Turning it off uses the CSV <code>Stop_Time</code>.</p>
       <p><strong>Important on iPhone:</strong> keep Beat Rater in the foreground while relying on automatic boundary pauses. iOS can throttle web timers after the app is backgrounded or the screen locks.</p>
     </div>
