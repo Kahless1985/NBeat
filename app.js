@@ -2,7 +2,7 @@
   'use strict';
   const C = globalThis.BeatRaterCore;
   const $ = id => document.getElementById(id);
-  const APP_VERSION = '0.1.5';
+  const APP_VERSION = '0.1.6';
   const BACKUP_CHANGE_THRESHOLD = 50;
   const BACKUP_TIME_THRESHOLD_MS = 60 * 60 * 1000;
 
@@ -319,7 +319,7 @@
 
       if (result.books.length === 1) {
         const b = result.books[0];
-        $('detectedBook').textContent = `Ready: ${b.audioFile.name} · ${b.csvFile.name} · ${b.timingFile.name}`;
+        $('detectedBook').textContent = `Ready: ${b.audioFile.name} · ${b.csvFile.name}${b.csvFiles?.length > 1 ? ` (newest of ${b.csvFiles.length} CSVs)` : ''} · ${b.timingFile.name}`;
         $('loadError').textContent = '';
       } else if (result.books.length > 1) {
         $('detectedBook').textContent = `Found ${result.books.length} complete book folders. Choose one below.`;
@@ -328,7 +328,7 @@
         $('detectedBook').textContent = 'No complete book folder found.';
         const first = result.incomplete[0];
         $('loadError').textContent = first
-          ? `Each book folder must contain exactly one MP3/MP4, one CSV, and one JSON file. ${first.issues.join('; ')}.`
+          ? `Each book folder must contain exactly one MP3/MP4, at least one CSV, and exactly one JSON file. ${first.issues.join('; ')}.`
           : 'No MP3/MP4, CSV, and JSON set was found.';
       }
     }
@@ -338,13 +338,13 @@
       const candidate = this.pendingBooks[selected];
       $('loadError').textContent = '';
       if (!candidate) {
-        $('loadError').textContent = 'Choose a folder containing exactly one MP3/MP4, one CSV, and one JSON file.';
+        $('loadError').textContent = 'Choose a folder containing exactly one MP3/MP4, at least one CSV, and exactly one JSON file.';
         return;
       }
-      return this.loadBookFiles(candidate.audioFile, candidate.csvFile, candidate.timingFile);
+      return this.loadBookFiles(candidate.audioFile, candidate.csvFile, candidate.timingFile, candidate.exportCsvName);
     }
 
-    async loadBookFiles(audioFile, csvFile, timingFile) {
+    async loadBookFiles(audioFile, csvFile, timingFile, exportCsvName = csvFile?.name || 'book_beats.csv') {
       try {
         const csvText = await csvFile.text();
         const parsed = C.parseCSV(csvText);
@@ -360,7 +360,7 @@
         if (this.book?.audioURL) URL.revokeObjectURL(this.book.audioURL);
         const audioURL = URL.createObjectURL(audioFile);
         this.book = {
-          audioFile, csvFile, timingFile, headers: parsed.headers, rows: parsed.rows,
+          audioFile, csvFile, timingFile, exportCsvName, headers: parsed.headers, rows: parsed.rows,
           timingStops: timing.stops, unitStarts, key, legacyKey, boundaryHash, audioURL,
           timingVersion: timing.version, sourceScores,
           backupDirty: false, backupChangeCount: 0, backupDirtySince: 0, lastExportAt: 0
@@ -1020,17 +1020,20 @@
     async exportCSV() {
       if (!this.book) return;
       const text = C.serializeCSV(this.book.headers, this.book.rows);
-      const file = new File([text], this.book.csvFile.name, { type: 'text/csv;charset=utf-8' });
+      const exportName = this.book.exportCsvName || this.book.csvFile.name;
+      const file = new File([text], exportName, { type: 'text/csv;charset=utf-8' });
       try {
         if (navigator.canShare?.({ files: [file] })) {
-          await navigator.share({ title: 'Beat Rater CSV', files: [file] });
+          // Share the CSV file only. Supplying a title/text payload causes some
+          // iOS Save to Files flows to create an unwanted companion text file.
+          await navigator.share({ files: [file] });
           this.markExportComplete();
-          this.render('CSV export completed. Replacing the source CSV is the expected backup workflow.');
+          this.render('CSV export completed. iOS may create a numbered copy; Beat Rater will use the newest CSV next time this folder is opened.');
         } else {
           const url = URL.createObjectURL(file);
           const a = document.createElement('a');
           a.href = url;
-          a.download = this.book.csvFile.name;
+          a.download = exportName;
           document.body.appendChild(a);
           a.click();
           a.remove();

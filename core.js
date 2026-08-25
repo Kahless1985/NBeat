@@ -187,6 +187,29 @@
     };
   }
 
+  function fileModifiedMs(file) {
+    const n = Number(file?.lastModified);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  function sortCsvNewestFirst(entries) {
+    return [...entries].sort((a, b) => {
+      const byTime = fileModifiedMs(b.file) - fileModifiedMs(a.file);
+      if (byTime) return byTime;
+      return String(b.name).localeCompare(String(a.name), undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }
+
+  function canonicalCsvName(entries) {
+    // iOS Save to Files creates numbered siblings when a name already exists.
+    // Prefer the shortest CSV filename as the stable export target so repeated
+    // sessions keep producing file.csv, file 2.csv, file 3.csv instead of
+    // nesting suffixes such as file 2 2.csv.
+    return [...entries]
+      .sort((a, b) => String(a.name).length - String(b.name).length ||
+        String(a.name).localeCompare(String(b.name), undefined, { numeric: true, sensitivity: 'base' }))[0]?.name || 'book_beats.csv';
+  }
+
   function discoverBookSets(files) {
     const list = Array.from(files || []).filter(Boolean);
     const entries = list.map(file => ({ file, ...filePathParts(file) }));
@@ -201,17 +224,19 @@
     const incomplete = [];
     for (const group of byDir.values()) {
       const audio = group.entries.filter(e => /\.(mp3|mp4)$/i.test(e.name));
-      const csv = group.entries.filter(e => /\.csv$/i.test(e.name));
+      const csv = sortCsvNewestFirst(group.entries.filter(e => /\.csv$/i.test(e.name)));
       const json = group.entries.filter(e => /\.json$/i.test(e.name));
       const issues = [];
       if (audio.length !== 1) issues.push(audio.length ? `found ${audio.length} audio files` : 'missing MP3/MP4');
-      if (csv.length !== 1) issues.push(csv.length ? `found ${csv.length} CSV files` : 'missing CSV');
+      if (csv.length < 1) issues.push('missing CSV');
       if (json.length !== 1) issues.push(json.length ? `found ${json.length} JSON files` : 'missing timing JSON');
 
       const candidate = {
         dir: group.dir,
         audioFile: audio[0]?.file || null,
         csvFile: csv[0]?.file || null,
+        csvFiles: csv.map(e => e.file),
+        exportCsvName: csv.length ? canonicalCsvName(csv) : 'book_beats.csv',
         timingFile: json[0]?.file || null,
         issues
       };

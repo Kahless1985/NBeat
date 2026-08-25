@@ -17,7 +17,7 @@
   <main id="app" class="app-shell" aria-live="polite">
     <header class="top-area">
       <div class="title-row">
-        <div class="title-wrap"><h1>Beat Rater</h1><span id="versionBadge" class="version-badge">v0.1.5</span></div>
+        <div class="title-wrap"><h1>Beat Rater</h1><span id="versionBadge" class="version-badge">v0.1.6</span></div>
         <button id="backupBtn" class="backup-indicator hidden" type="button" aria-label="Export CSV backup"><span class="backup-dot" aria-hidden="true"></span><span id="backupLabel">Backup</span></button>
       </div>
       <div class="transport-grid" aria-label="Playback controls">
@@ -138,9 +138,9 @@
       <p><strong>Skip:</strong> leaves the Score unchanged and continues naturally. In Unrated Review Mode it seeks to the next unrated Beat.</p>
       <p><strong>Back:</strong> goes to the current navigation unit start, or the previous unit if already at its start. It preserves whether playback was playing or paused.</p>
       <p><strong>Forward / Beat End:</strong> in Beat mode it jumps to the current Beat pause point. If the Beat is already rated and audio was playing, it continues immediately into the next Beat; otherwise it remains paused at the boundary. In Scene/Sequence/Movement mode it jumps to the next unit and can bulk-score skipped Beats.</p>
-      <p><strong>Files:</strong> Put one MP3 or MP4, one CSV, and one timing JSON in each book folder. Filenames do not need to match. Choose that folder and Beat Rater identifies the three files by extension. The fallback picker can select the same three files together.</p>
+      <p><strong>Files:</strong> Put one MP3 or MP4, at least one CSV, and one timing JSON in each book folder. Filenames do not need to match. If numbered CSV export copies are present, Beat Rater automatically uses the most recently modified CSV. The fallback picker can select the book files together.</p>
       <p><strong>Timing:</strong> Waveform-aware mode uses <code>effective_stop_ms</code> from your PC-generated <code>.timings.json</code>. Turning it off uses the CSV <code>Stop_Time</code>.</p>
-      <p><strong>Backup:</strong> the top-right Backup indicator becomes prominent after 50 score changes or one hour with unexported changes. Tap it at any time to export the current CSV. Saving over the source CSV is the expected workflow.</p>
+      <p><strong>Backup:</strong> the top-right Backup indicator becomes prominent after 50 score changes or one hour with unexported changes. Tap it at any time to export the current CSV. On iPhone, Save to Files may create a numbered CSV copy instead of replacing the existing file. Beat Rater automatically uses the most recently modified CSV the next time the folder is opened.</p>
       <p><strong>Important on iPhone:</strong> keep Beat Rater in the foreground while relying on automatic boundary pauses. iOS can throttle web timers after the app is backgrounded or the screen locks.</p>
     </div>
   </div>
