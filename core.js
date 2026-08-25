@@ -140,6 +140,16 @@
     return s;
   }
 
+  function structuralBookKey(rows) {
+    const text = boundaryHashText(rows);
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return `structure:${rows.length}:${hash.toString(16).padStart(8, '0')}`;
+  }
+
   async function sha256Hex(text) {
     if (!globalThis.crypto?.subtle) return null;
     const buf = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -159,7 +169,6 @@
     });
     const sig = payload.signature || {};
     const warnings = [];
-    if (mediaFile && sig.media_name && sig.media_name !== mediaFile.name) warnings.push(`Timing file was built for ${sig.media_name}, selected audio is ${mediaFile.name}.`);
     if (mediaFile && Number.isFinite(Number(sig.media_size)) && Number(sig.media_size) !== mediaFile.size) warnings.push('Audio file size differs from the timing-file signature.');
     if (sig.boundary_hash) {
       const actual = await sha256Hex(boundaryHashText(rows));
@@ -181,38 +190,38 @@
   function discoverBookSets(files) {
     const list = Array.from(files || []).filter(Boolean);
     const entries = list.map(file => ({ file, ...filePathParts(file) }));
-    const index = new Map();
+    const byDir = new Map();
     for (const entry of entries) {
-      const key = `${entry.dir.toLowerCase()}\u001f${entry.name.toLowerCase()}`;
-      if (!index.has(key)) index.set(key, entry.file);
+      const key = entry.dir.toLowerCase();
+      if (!byDir.has(key)) byDir.set(key, { dir: entry.dir, entries: [] });
+      byDir.get(key).entries.push(entry);
     }
 
     const books = [];
     const incomplete = [];
-    for (const entry of entries) {
-      const m = entry.name.match(/^(.*)\.(mp3|mp4)$/i);
-      if (!m) continue;
-      const base = m[1];
-      const prefix = `${entry.dir.toLowerCase()}\u001f${base.toLowerCase()}`;
-      const csvFile = index.get(`${prefix}.csv`);
-      const timingFile = index.get(`${prefix}.timings.json`);
-      const book = {
-        base,
-        dir: entry.dir,
-        audioFile: entry.file,
-        csvFile: csvFile || null,
-        timingFile: timingFile || null
+    for (const group of byDir.values()) {
+      const audio = group.entries.filter(e => /\.(mp3|mp4)$/i.test(e.name));
+      const csv = group.entries.filter(e => /\.csv$/i.test(e.name));
+      const json = group.entries.filter(e => /\.json$/i.test(e.name));
+      const issues = [];
+      if (audio.length !== 1) issues.push(audio.length ? `found ${audio.length} audio files` : 'missing MP3/MP4');
+      if (csv.length !== 1) issues.push(csv.length ? `found ${csv.length} CSV files` : 'missing CSV');
+      if (json.length !== 1) issues.push(json.length ? `found ${json.length} JSON files` : 'missing timing JSON');
+
+      const candidate = {
+        dir: group.dir,
+        audioFile: audio[0]?.file || null,
+        csvFile: csv[0]?.file || null,
+        timingFile: json[0]?.file || null,
+        issues
       };
-      if (csvFile && timingFile) books.push(book);
-      else incomplete.push({
-        ...book,
-        missing: [!csvFile ? `${base}.csv` : '', !timingFile ? `${base}.timings.json` : ''].filter(Boolean)
-      });
+      if (!issues.length) books.push(candidate);
+      else if (audio.length || csv.length || json.length) incomplete.push(candidate);
     }
 
     books.sort((a, b) => {
-      const ak = `${a.dir}/${a.audioFile.name}`.toLowerCase();
-      const bk = `${b.dir}/${b.audioFile.name}`.toLowerCase();
+      const ak = `${a.dir}/${a.audioFile?.name || ''}`.toLowerCase();
+      const bk = `${b.dir}/${b.audioFile?.name || ''}`.toLowerCase();
       return ak.localeCompare(bk);
     });
     return { books, incomplete };
@@ -250,6 +259,6 @@
     REQUIRED_COLUMNS, NAV_UNITS, timestampToMs, msToTimestamp, parseCSV, serializeCSV,
     buildUnitStarts, currentUnitStart, nextUnitStart, previousUnitStart,
     isRated, unratedCount, nextUnratedIndex, beatId, bookStateKey,
-    boundaryHashText, sha256Hex, validateTimings, discoverBookSets, PlaybackClock
+    boundaryHashText, structuralBookKey, sha256Hex, validateTimings, discoverBookSets, PlaybackClock
   };
 });

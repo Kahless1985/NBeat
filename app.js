@@ -2,7 +2,9 @@
   'use strict';
   const C = globalThis.BeatRaterCore;
   const $ = id => document.getElementById(id);
-  const APP_VERSION = '0.1.4';
+  const APP_VERSION = '0.1.5';
+  const BACKUP_CHANGE_THRESHOLD = 50;
+  const BACKUP_TIME_THRESHOLD_MS = 60 * 60 * 1000;
 
   const DEFAULT_OPTIONS = {
     pauseAtBeatEnd: true,
@@ -65,6 +67,7 @@
       $('playBtn').addEventListener('click', () => this.handlePlayPause());
       $('forwardBtn').addEventListener('click', () => this.goForward());
       $('optionsBtn').addEventListener('click', () => this.openOptions());
+      $('backupBtn').addEventListener('click', () => this.exportCSV());
       $('skipBtn').addEventListener('click', () => this.skipRating());
       $('unratedBtn').addEventListener('click', () => this.jumpToNextUnrated(true));
       document.querySelectorAll('.nav-chip').forEach(b => b.addEventListener('click', () => this.setNav(b.dataset.nav)));
@@ -307,7 +310,7 @@
         const book = result.books[i];
         const opt = document.createElement('option');
         opt.value = String(i);
-        opt.textContent = book.dir ? `${book.audioFile.name} — ${book.dir}` : book.audioFile.name;
+        opt.textContent = book.dir || book.audioFile.name;
         choice.appendChild(opt);
       }
       choice.value = '0';
@@ -316,17 +319,17 @@
 
       if (result.books.length === 1) {
         const b = result.books[0];
-        $('detectedBook').textContent = `Ready: ${b.audioFile.name} + ${b.csvFile.name} + ${b.timingFile.name}`;
+        $('detectedBook').textContent = `Ready: ${b.audioFile.name} · ${b.csvFile.name} · ${b.timingFile.name}`;
         $('loadError').textContent = '';
       } else if (result.books.length > 1) {
-        $('detectedBook').textContent = `Found ${result.books.length} complete book sets. Choose the audio file below.`;
+        $('detectedBook').textContent = `Found ${result.books.length} complete book folders. Choose one below.`;
         $('loadError').textContent = '';
       } else {
-        $('detectedBook').textContent = 'No complete book set found.';
+        $('detectedBook').textContent = 'No complete book folder found.';
         const first = result.incomplete[0];
         $('loadError').textContent = first
-          ? `Found ${first.audioFile.name}, but missing ${first.missing.join(' and ')} in the same folder. Files must share the same base name.`
-          : 'No MP3 or MP4 with a matching .csv and .timings.json was found.';
+          ? `Each book folder must contain exactly one MP3/MP4, one CSV, and one JSON file. ${first.issues.join('; ')}.`
+          : 'No MP3/MP4, CSV, and JSON set was found.';
       }
     }
 
@@ -335,7 +338,7 @@
       const candidate = this.pendingBooks[selected];
       $('loadError').textContent = '';
       if (!candidate) {
-        $('loadError').textContent = 'Choose a folder or select the matching audio, CSV, and timing JSON together.';
+        $('loadError').textContent = 'Choose a folder containing exactly one MP3/MP4, one CSV, and one JSON file.';
         return;
       }
       return this.loadBookFiles(candidate.audioFile, candidate.csvFile, candidate.timingFile);
@@ -345,25 +348,22 @@
       try {
         const csvText = await csvFile.text();
         const parsed = C.parseCSV(csvText);
+        const sourceScores = this.collectScores(parsed.rows);
         const timingPayload = JSON.parse(await timingFile.text());
         const timing = await C.validateTimings(timingPayload, parsed.rows, audioFile);
         const unitStarts = C.buildUnitStarts(parsed.rows);
-        const key = C.bookStateKey(parsed.rows, audioFile.name, csvFile.name);
-        const boundaryHash = (await C.sha256Hex(C.boundaryHashText(parsed.rows))) || C.boundaryHashText(parsed.rows);
-        const audioBase = audioFile.name.replace(/\.(?:mp3|mp4)$/i, '');
-        const expectedCsvName = `${audioBase}.csv`;
-        const expectedTimingName = `${audioBase}.timings.json`;
-        const nameWarnings = [];
-        if (csvFile.name.toLowerCase() !== expectedCsvName.toLowerCase()) nameWarnings.push(`Expected ${expectedCsvName}; selected ${csvFile.name}.`);
-        if (timingFile.name.toLowerCase() !== expectedTimingName.toLowerCase()) nameWarnings.push(`Expected ${expectedTimingName}; selected ${timingFile.name}.`);
+        const legacyKey = C.bookStateKey(parsed.rows, audioFile.name, csvFile.name);
+        const key = C.structuralBookKey(parsed.rows);
+        const boundaryHash = (await C.sha256Hex(C.boundaryHashText(parsed.rows))) || key;
 
         this.stopPlaybackForBookChange();
         if (this.book?.audioURL) URL.revokeObjectURL(this.book.audioURL);
         const audioURL = URL.createObjectURL(audioFile);
         this.book = {
           audioFile, csvFile, timingFile, headers: parsed.headers, rows: parsed.rows,
-          timingStops: timing.stops, unitStarts, key, boundaryHash, audioURL,
-          timingVersion: timing.version
+          timingStops: timing.stops, unitStarts, key, legacyKey, boundaryHash, audioURL,
+          timingVersion: timing.version, sourceScores,
+          backupDirty: false, backupChangeCount: 0, backupDirtySince: 0, lastExportAt: 0
         };
         this.currentIdx = 0;
         this.navUnit = this.options.defaultNavigationUnit;
@@ -377,11 +377,11 @@
         await this.waitForMetadata();
         this.clock.setPosition(parsed.rows[0]._start_ms, false);
         this.lastActualMediaMs = parsed.rows[0]._start_ms;
-        this.restoreSavedScores();
-        this.hide('loadModal');
         const saved = this.readState();
-        const warnings = [...timing.warnings, ...nameWarnings];
-        this.book.warning = warnings.join(' ');
+        this.restoreSavedScores(saved);
+        this.initializeBackupState(saved);
+        this.hide('loadModal');
+        this.book.warning = timing.warnings.join(' ');
         if (saved && saved.boundaryHash === boundaryHash) {
           this.restoreProgress(saved);
           $('resumeInfo').textContent = `Saved Beat ${this.currentIdx + 1} / ${this.book.rows.length} at ${C.msToTimestamp(saved.positionMs ?? this.book.rows[this.currentIdx]._start_ms)}.`;
@@ -426,16 +426,98 @@
     }
 
     stateKey() { return this.book ? `beat-rater:book:${this.book.key}` : null; }
-    readState() { if (!this.book) return null; try { return JSON.parse(localStorage.getItem(this.stateKey()) || 'null'); } catch { return null; } }
+    legacyStateKey() { return this.book?.legacyKey ? `beat-rater:book:${this.book.legacyKey}` : null; }
 
-    restoreSavedScores() {
-      const state = this.readState();
+    readState() {
+      if (!this.book) return null;
+      try {
+        const current = JSON.parse(localStorage.getItem(this.stateKey()) || 'null');
+        if (current) return current;
+        const legacyKey = this.legacyStateKey();
+        return legacyKey ? JSON.parse(localStorage.getItem(legacyKey) || 'null') : null;
+      } catch { return null; }
+    }
+
+    collectScores(rows = this.book?.rows || []) {
+      const scores = {};
+      rows.forEach((r, i) => {
+        if (C.isRated(r)) scores[C.beatId(r, i)] = Number(r.Score);
+      });
+      return scores;
+    }
+
+    scoreMapsEqual(a = {}, b = {}) {
+      const ak = Object.keys(a); const bk = Object.keys(b);
+      if (ak.length !== bk.length) return false;
+      for (const key of ak) if (Number(a[key]) !== Number(b[key])) return false;
+      return true;
+    }
+
+    scoreDifferenceCount() {
+      if (!this.book) return 0;
+      const current = this.collectScores();
+      const source = this.book.sourceScores || {};
+      const keys = new Set([...Object.keys(current), ...Object.keys(source)]);
+      let changed = 0;
+      for (const key of keys) {
+        const a = Object.prototype.hasOwnProperty.call(current, key) ? Number(current[key]) : null;
+        const b = Object.prototype.hasOwnProperty.call(source, key) ? Number(source[key]) : null;
+        if (a !== b) changed++;
+      }
+      return changed;
+    }
+
+    restoreSavedScores(state = this.readState()) {
       if (!state || state.boundaryHash !== this.book.boundaryHash || !state.scores) return;
       const byId = new Map(this.book.rows.map((r, i) => [C.beatId(r, i), i]));
       for (const [id, score] of Object.entries(state.scores)) {
         const idx = byId.get(id);
         if (idx != null && [-2,-1,0,1,2].includes(Number(score))) this.book.rows[idx].Score = String(score);
       }
+    }
+
+    initializeBackupState(state) {
+      if (!this.book) return;
+      const differences = this.scoreDifferenceCount();
+      this.book.backupDirty = differences > 0;
+      if (this.book.backupDirty) {
+        this.book.backupChangeCount = Math.max(differences, Number(state?.backupChangeCount) || 0);
+        this.book.backupDirtySince = Number(state?.backupDirtySince) || Number(state?.updatedAt) || Date.now();
+      } else {
+        this.book.backupChangeCount = 0;
+        this.book.backupDirtySince = 0;
+      }
+      this.book.lastExportAt = Number(state?.lastExportAt) || 0;
+    }
+
+    recordScoreChanges(count = 1) {
+      if (!this.book || count <= 0) return;
+      const differences = this.scoreDifferenceCount();
+      if (differences === 0) {
+        this.book.backupDirty = false;
+        this.book.backupChangeCount = 0;
+        this.book.backupDirtySince = 0;
+        return;
+      }
+      if (!this.book.backupDirty) this.book.backupDirtySince = Date.now();
+      this.book.backupDirty = true;
+      this.book.backupChangeCount = (Number(this.book.backupChangeCount) || 0) + count;
+    }
+
+    backupRecommended() {
+      if (!this.book?.backupDirty) return false;
+      return (Number(this.book.backupChangeCount) || 0) >= BACKUP_CHANGE_THRESHOLD ||
+        (Number(this.book.backupDirtySince) > 0 && Date.now() - Number(this.book.backupDirtySince) >= BACKUP_TIME_THRESHOLD_MS);
+    }
+
+    markExportComplete() {
+      if (!this.book) return;
+      this.book.sourceScores = this.collectScores();
+      this.book.backupDirty = false;
+      this.book.backupChangeCount = 0;
+      this.book.backupDirtySince = 0;
+      this.book.lastExportAt = Date.now();
+      this.saveState();
     }
 
     restoreProgress(state) {
@@ -451,23 +533,26 @@
 
     saveState(positionMs = null) {
       if (!this.book) return;
-      const scores = {};
-      this.book.rows.forEach((r, i) => { if (C.isRated(r)) scores[C.beatId(r, i)] = Number(r.Score); });
       const state = {
-        version: 2,
+        version: 3,
         appVersion: APP_VERSION,
         boundaryHash: this.book.boundaryHash,
-        mediaFile: this.book.audioFile.name,
-        csvFile: this.book.csvFile.name,
         currentIdx: this.currentIdx,
         beatId: C.beatId(this.book.rows[this.currentIdx], this.currentIdx),
         preRatedBeatId: this.preRatedIdx === this.currentIdx ? C.beatId(this.book.rows[this.currentIdx], this.currentIdx) : '',
         navUnit: this.navUnit,
         positionMs: Math.max(0, Math.round(positionMs ?? this.displayPositionMs())),
-        scores,
+        scores: this.collectScores(),
+        backupChangeCount: Number(this.book.backupChangeCount) || 0,
+        backupDirtySince: Number(this.book.backupDirtySince) || 0,
+        lastExportAt: Number(this.book.lastExportAt) || 0,
         updatedAt: Date.now()
       };
-      try { localStorage.setItem(this.stateKey(), JSON.stringify(state)); } catch (err) { console.warn('Could not save local checkpoint', err); }
+      try {
+        localStorage.setItem(this.stateKey(), JSON.stringify(state));
+        const legacyKey = this.legacyStateKey();
+        if (legacyKey && legacyKey !== this.stateKey()) localStorage.removeItem(legacyKey);
+      } catch (err) { console.warn('Could not save local checkpoint', err); }
     }
 
     async seekAndPlayFromUserGesture(ms) {
@@ -754,7 +839,10 @@
 
     async rateCurrent(score) {
       if (!this.book) return;
-      this.book.rows[this.currentIdx].Score = String(score);
+      const oldScore = String(this.book.rows[this.currentIdx].Score ?? '').trim();
+      const newScore = String(score);
+      this.book.rows[this.currentIdx].Score = newScore;
+      if (oldScore !== newScore) this.recordScoreChanges(1);
       this.saveState();
       if (this.options.unratedReviewMode) {
         const dest = C.nextUnratedIndex(this.book.rows, this.currentIdx);
@@ -882,7 +970,13 @@
         const choice = await this.promptBulkScore(dest);
         if (choice === null) { this.render('Forward skip cancelled.'); return; }
         if (typeof choice === 'number') {
-          for (let i = this.currentIdx; i < dest; i++) this.book.rows[i].Score = String(choice);
+          let changed = 0;
+          for (let i = this.currentIdx; i < dest; i++) {
+            const next = String(choice);
+            if (String(this.book.rows[i].Score ?? '').trim() !== next) changed++;
+            this.book.rows[i].Score = next;
+          }
+          this.recordScoreChanges(changed);
           this.saveState();
         }
       }
@@ -901,7 +995,6 @@
       if (this.bulkResolver) {
         const r = this.bulkResolver;
         this.bulkResolver = null;
-      this.pendingBooks = [];
         r(value);
       }
     }
@@ -931,7 +1024,8 @@
       try {
         if (navigator.canShare?.({ files: [file] })) {
           await navigator.share({ title: 'Beat Rater CSV', files: [file] });
-          this.render('CSV export opened. Choose Save to Files to keep it on iPhone.');
+          this.markExportComplete();
+          this.render('CSV export completed. Replacing the source CSV is the expected backup workflow.');
         } else {
           const url = URL.createObjectURL(file);
           const a = document.createElement('a');
@@ -941,6 +1035,7 @@
           a.click();
           a.remove();
           setTimeout(() => URL.revokeObjectURL(url), 3000);
+          this.markExportComplete();
           this.render('CSV downloaded.');
         }
       } catch (err) {
@@ -1062,6 +1157,25 @@
     render(message = null) {
       if (message != null) $('message').textContent = message;
       $('versionBadge').textContent = `v${APP_VERSION}`;
+      const backupBtn = $('backupBtn');
+      const backupLabel = $('backupLabel');
+      backupBtn.classList.toggle('hidden', !this.book);
+      backupBtn.classList.remove('pending', 'recommended', 'clean');
+      if (this.book) {
+        if (!this.book.backupDirty) {
+          backupBtn.classList.add('clean');
+          backupLabel.textContent = 'Backup ✓';
+          backupBtn.setAttribute?.('aria-label', 'CSV backup is current');
+        } else if (this.backupRecommended()) {
+          backupBtn.classList.add('recommended');
+          backupLabel.textContent = 'Backup !';
+          backupBtn.setAttribute?.('aria-label', 'CSV backup recommended');
+        } else {
+          backupBtn.classList.add('pending');
+          backupLabel.textContent = 'Backup';
+          backupBtn.setAttribute?.('aria-label', 'Export pending score changes');
+        }
+      }
 
       const playing = this.isPlaying();
       this.syncPlayPauseControl();
