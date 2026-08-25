@@ -2,7 +2,7 @@
   'use strict';
   const C = globalThis.BeatRaterCore;
   const $ = id => document.getElementById(id);
-  const APP_VERSION = '0.1.6';
+  const APP_VERSION = '0.1.7';
   const BACKUP_CHANGE_THRESHOLD = 50;
   const BACKUP_TIME_THRESHOLD_MS = 60 * 60 * 1000;
 
@@ -762,7 +762,7 @@
       if (manual) this.autoPaused = false;
       this.releaseWakeLock();
       this.saveState(pos);
-      this.render(message ?? (manual ? 'Paused.' : 'Reached Beat pause point.'));
+      this.render(message != null ? message : (manual ? '' : 'Reached Beat pause point.'));
     }
 
     waitForSeek(targetMs) {
@@ -834,7 +834,7 @@
       }
       await this.safePlay();
       this.saveState();
-      this.render('Playing.');
+      this.render('');
     }
 
     async rateCurrent(score) {

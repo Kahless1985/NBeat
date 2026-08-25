@@ -108,3 +108,5 @@ input[type="checkbox"] { width: 40px; height: 24px; accent-color: #30d158; }
   .quick-btn { min-height: 27px; }
   .nav-chip { min-height: 25px; }
 }
+
+.message:empty { display: none; }
